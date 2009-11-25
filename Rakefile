@@ -6,7 +6,7 @@ begin
   Jeweler::Tasks.new do |gem|
     gem.name = "hmm"
     gem.summary = %Q{HMM Classifier}
-    gem.description = %Q{TODO: longer description of your gem}
+    gem.description = %Q{This project is a Ruby gem ('hmm') for machine learning that natively implements a (somewhat) generalized Hidden Markov Model classifier.}
     gem.email = "dwkirsch@gmail.com"
     gem.homepage = "http://github.com/dtkirsch/hmm"
     gem.authors = ["David Tresner-Kirsch"]
