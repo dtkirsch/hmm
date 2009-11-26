@@ -1,10 +1,10 @@
-
 # Hidden Markov Model classifier.
 # Currently capable of:
 #	-supervised training on data with arbitrary state and observation domains.
 # 	-decoding of obsservation strings via Viterbi
 #	-computing token level accuracy across a list of observation sequences
 #		against a provided gold standard
+
 
 require 'rubygems'
 require 'narray'
