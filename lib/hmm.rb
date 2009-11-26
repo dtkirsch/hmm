@@ -52,6 +52,14 @@ class HMM
 			@a /= @a.sum(1)
 			@b /= @b.sum(1)
 		end
+		
+		def train_unsupervised
+			@pi = NArray.float(@q_lex.length).fill(1)/@q_lex.length			
+			@a = NArray.float(@q_lex.length, @q_lex.length).fill(1)/@q_lex.length
+			@b = NArray.float(@q_lex.length, @o_lex.length).fill(1)/@q_lex.length
+			puts @pi.inspect, @a.inspect, @b.inspect if debug
+			
+		end
 	    
 
 		def decode(o_sequence)
