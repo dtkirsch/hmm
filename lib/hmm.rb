@@ -10,6 +10,8 @@ require 'rubygems'
 require 'narray'
 
 class HMM
+	
+	Infinity = 1.0/0
 
 	class Classifier
 		attr_accessor :a, :b, :pi, :o_lex, :q_lex, :debug, :train
@@ -106,9 +108,11 @@ class HMM
 		
 		# index and deindex map between labels and the ordinals of those labels.
 		# the ordinals map the labels to rows and columns of Pi, A, and B
-		def index(sequence, lexicon)
+		def index(subject, lexicon)
+			sequence = Array(subject)
                         lexicon |= sequence # add any unknown tokens to the lex
-			sequence.collect{|x| lexicon.rindex(x)}
+			indices = sequence.collect{|x| lexicon.rindex(x)}
+			subject.is_a?(Array) ? indices : indices[0] 
 		end
 		
 		def deindex(sequence, lexicon)
@@ -116,9 +120,12 @@ class HMM
 		end
 		
 		# abstracting out some array element operations for readability
-		def log(array)
-			# natural log of each element
-			array.collect{|n| NMath::log n}
+		def log(subject)
+			if subject.is_a?(Array) or subject.is_a?(NArray)
+				return subject.collect{|n| NMath::log n}
+			else
+				return log(Array[subject])[0]
+			end
 		end
 		
 		def exp(array)
