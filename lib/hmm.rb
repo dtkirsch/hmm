@@ -53,17 +53,175 @@ class HMM
 			@pi /= @pi.sum
 			@a /= @a.sum(1)
 			@b /= @b.sum(1)
-		end
+		end	
 		
-		def train_unsupervised
-			@pi = NArray.float(@q_lex.length).fill(1)/@q_lex.length			
-			@a = NArray.float(@q_lex.length, @q_lex.length).fill(1)/@q_lex.length
-			@b = NArray.float(@q_lex.length, @o_lex.length).fill(1)/@q_lex.length
+		def train_unsupervised(sequences)
+			# initialize model parameters if we don't already have an estimate
+			@pi ||= NArray.float(@q_lex.length).fill(1)/@q_lex.length			
+			@a ||= NArray.float(@q_lex.length, @q_lex.length).fill(1)/@q_lex.length
+			@b ||= NArray.float(@q_lex.length, @o_lex.length).fill(1)/@q_lex.length
 			puts @pi.inspect, @a.inspect, @b.inspect if debug
 			
-		end
-	    
+			converged = false
+			last_logprob = 0
+			iteration = 0
+			max_iterations = 10 #1000 #kwargs.get('max_iterations', 1000)
+			epsilon = 1e-6 # kwargs.get('convergence_logprob', 1e-6)
+			
+			max_iterations.times do |iteration|
+				puts "iteration ##{iteration}" #if debug
 
+				_A_numer = NArray.float(q_lex.length,q_lex.length).fill(-Infinity)
+				_B_numer = NArray.float(q_lex.length, o_lex.length).fill(-Infinity)
+				_A_denom = NArray.float(q_lex.length).fill(-Infinity)
+				_B_denom = NArray.float(q_lex.length).fill(-Infinity)
+				
+				logprob = 0.0
+				
+				#logprob = last_logprob + 1 # take this out
+				
+				sequences.each do |sequence|
+					# just in case, skip if sequence contains unrecognized tokens
+					next unless (sequence-o_lex).empty?
+					
+					# compute forward and backward probabilities
+					alpha = forward_probability(sequence)
+					beta = backward_probability(sequence)
+					lpk = log_add(alpha[-1, true]) #sum of last alphas. divide by this to get probs
+					logprob += lpk
+					
+					local_A_numer = NArray.float(q_lex.length,q_lex.length).fill(-Infinity)
+					local_B_numer = NArray.float(q_lex.length, o_lex.length).fill(-Infinity)
+					local_A_denom = NArray.float(q_lex.length).fill(-Infinity)
+					local_B_denom = NArray.float(q_lex.length).fill(-Infinity)
+					
+					sequence.each_with_index do |o, t|
+						o_next = index(sequence[t+1], o_lex) if t < sequence.length-1
+						
+						q_lex.each_index do |i|
+							if t < sequence.length-1
+								q_lex.each_index do |j|
+									local_A_numer[i, j] =  \
+										log_add([local_A_numer[i, j], \
+										alpha[t, i] + \
+											log(@a[i,j]) + \
+											log(@b[j,o_next]) + \
+											beta[t+1, j]])
+								end
+								local_A_denom[i] = log_add([local_A_denom[i],
+											alpha[t, i] + beta[t, i]])
+	
+							else
+								local_B_denom[i] = log_add([local_A_denom[i],
+											alpha[t, i] + beta[t, i]])
+							end
+							local_B_numer[i, index(o,o_lex)] = log_add([local_B_numer[i, index(o, o_lex)],
+								alpha[t, i] + beta[t, i]])
+
+						end
+						
+						puts local_A_numer.inspect if debug
+						
+						q_lex.each_index do |i|
+							q_lex.each_index do |j|
+								_A_numer[i, j] = log_add([_A_numer[i, j],
+									local_A_numer[i, j] - lpk])
+							end
+							o_lex.each_index do |k|	
+								_B_numer[i, k] = log_add([_B_numer[i, k], local_B_numer[i, k] - lpk])
+							end
+							_A_denom[i] = log_add([_A_denom[i], local_A_denom[i] - lpk])
+							_B_denom[i] = log_add([_B_denom[i], local_B_denom[i] - lpk])
+						end
+					end
+				
+					puts alpha.collect{|x| Math::E**x}.inspect if debug
+				end		
+
+				puts _A_denom.inspect if debug
+
+				q_lex.each_index do |i|
+					q_lex.each_index do |j|
+						#puts 2**(_A_numer[i,j] - _A_denom[i]), _A_numer[i,j], _A_denom[i]
+						@a[i, j] = 2**(_A_numer[i,j] - _A_denom[i])
+					end
+					o_lex.each_index do |k|
+						@b[i, k] = 2**(_B_numer[i,k] - _B_denom[i])
+					end
+					# This comment appears in NLTK:
+					# Rabiner says the priors don't need to be updated. I don't
+					# believe him. FIXME
+				end
+					
+
+				if iteration > 0 and (logprob - last_logprob).abs < epsilon
+					puts "CONVERGED: #{(logprob - last_logprob).abs}" if debug
+					puts "epsilon: #{epsilon}" if debug
+					break
+				end
+				
+				last_logprob = logprob
+			end
+		end
+		
+		def forward_probability(sequence)
+			alpha = NArray.float(sequence.length, q_lex.length)
+			# log version not coming out the same as unlogged!!!! check!
+			_t=sequence.length
+			n = q_lex.length
+			
+#			n.times do |i|
+#				alpha[0, i] = @pi[i] + @b[i, index(sequence.first, o_lex)]
+#			end
+			alpha[0, true] = log(@pi) + log(@b[true, index(sequence.first, o_lex)])
+			
+			sequence.each_with_index do |o, t|
+				next if t==0
+				q_lex.each_index do |i|
+					q_lex.each_index do |j|
+						# NLTK:
+						#alpha[t, i] = _log_add(alpha[t, i], alpha[t-1, j] +
+						#	self._transitions[sj].logprob(si))
+#						puts alpha[t-1, i]+log(@a[i, j]), alpha[t-1, i],log(@a[i, j])
+						alpha[t, i] = log_add([alpha[t, i], alpha[t-1, j]+log(@a[j, i])])
+					end
+					alpha[t, i] += log(b[i, index(o, o_lex)])
+				end
+			end
+			alpha
+		end
+		
+		def log_add(values)
+			x = values.max
+			if x > -Infinity
+				sum_diffs = 0
+				values.each do |value|
+					sum_diffs += Math::E**(value - x)
+				end
+				return x + log(sum_diffs)
+			else
+				return x
+			end
+		end
+		
+		def backward_probability(sequence)
+			beta = NArray.float(sequence.length, q_lex.length).fill(-Infinity)
+			
+			beta[-1, true] = log(1)
+			
+			(sequence.length-2).downto(0) do |t|
+				q_lex.each_index do |i|
+					q_lex.each_index do |j|
+						beta[t, i] = log_add([beta[t,i], log(@a[i, j]) \
+							+ log(@b[j, index(sequence[t], o_lex)]) \
+							+ beta[t+1, j]])
+					end
+				end
+			end
+
+			beta
+		end
+		
 		def decode(o_sequence)
 			# Viterbi!  with log probability math to avoid underflow
 			
@@ -109,11 +267,14 @@ class HMM
 		# index and deindex map between labels and the ordinals of those labels.
 		# the ordinals map the labels to rows and columns of Pi, A, and B
 		def index(subject, lexicon)
-			sequence = Array(subject)
-                        lexicon |= sequence # add any unknown tokens to the lex
-			indices = sequence.collect{|x| lexicon.rindex(x)}
-			subject.is_a?(Array) ? indices : indices[0] 
+			if subject.is_a?(Array) or subject.is_a?(NArray)
+				return subject.collect{|x| lexicon.rindex(x)}
+			else
+				return index(Array[subject], lexicon)[0]
+			end
 		end
+		
+		#private
 		
 		def deindex(sequence, lexicon)
 			sequence.collect{|i| lexicon[i]}
