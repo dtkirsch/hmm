@@ -44,7 +44,7 @@ class TestHmm < Test::Unit::TestCase
 						[ 0.2502, 0.25, 1.0 ] ]
 
 		assert close_enough(expected_beta, \
-			@simple_model.backward_probability(["A","B","A"]).collect{|x| Math::E**x}
+			@simple_model.backward_probability(["A","B","A"]).collect{|x| Math::E**x})
 	end
 	
 	
