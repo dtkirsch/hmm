@@ -5,7 +5,6 @@
 #	-computing token level accuracy across a list of observation sequences
 #		against a provided gold standard
 
-
 require 'rubygems'
 require 'narray'
 
