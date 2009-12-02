@@ -165,7 +165,7 @@ class HMM
 		end
 		
 		def forward_probability(sequence)
-			alpha = NArray.float(sequence.length, q_lex.length)
+			alpha = NArray.float(sequence.length, q_lex.length).fill(-Infinity)
 			# log version not coming out the same as unlogged!!!! check!
 			_t=sequence.length
 			n = q_lex.length
