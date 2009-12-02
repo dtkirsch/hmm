@@ -9,6 +9,8 @@
 require 'rubygems'
 require 'narray'
 
+class Array; def sum; inject( nil ) { |sum,x| sum ? sum+x : x }; end; end
+
 class HMM
 	
 	Infinity = 1.0/0
@@ -49,13 +51,89 @@ class HMM
 				end
 			end
 			
+			# smooth to allow unobserved cases
+			@pi += 0.1
+			@a += 0.1
+			@b += 0.1
+			
 			# normalize frequencies into probabilities
 			@pi /= @pi.sum
 			@a /= @a.sum(1)
 			@b /= @b.sum(1)
 		end	
 		
-		def train_unsupervised(sequences)
+		def train_unsupervised2(sequences)
+			# for debugging ONLY
+			orig_sequences = sequences.clone
+			sequences = [sequences.sum]
+			
+			# initialize model parameters if we don't already have an estimate
+			@pi ||= NArray.float(@q_lex.length).fill(1)/@q_lex.length			
+			@a ||= NArray.float(@q_lex.length, @q_lex.length).fill(1)/@q_lex.length
+			@b ||= NArray.float(@q_lex.length, @o_lex.length).fill(1)/@q_lex.length
+			puts @pi.inspect, @a.inspect, @b.inspect if debug
+			
+			max_iterations = 1 #1000 #kwargs.get('max_iterations', 1000)
+			epsilon = 1e-6 # kwargs.get('convergence_logprob', 1e-6)
+			
+			max_iterations.times do |iteration|
+				puts "iteration ##{iteration}" #if debug
+				logprob = 0.0
+				
+				sequences.each do |sequence|
+					# just in case, skip if sequence contains unrecognized tokens
+					next unless (sequence-o_lex).empty?
+					
+					# compute forward and backward probabilities
+					alpha = forward_probability(sequence)
+					beta = backward_probability(sequence)
+					lpk = log_add(alpha[-1, true]) #sum of last alphas. divide by this to get probs
+					logprob += lpk
+					
+					xi = xi(sequence)
+					gamma = gamma(xi)
+					
+					localA = NArray.float(q_lex.length,q_lex.length)
+					localB = NArray.float(q_lex.length,o_lex.length)
+					
+					q_lex.each_index do |i|
+						q_lex.each_index do |j|
+							numA = -Infinity
+							denomA = -Infinity
+							sequence.each_index do |t|
+								break if t >= sequence.length-1
+								numA = log_add([numA, xi[t, i, j]])
+								denomA = log_add([denomA, gamma[t, i]])
+							end
+							localA[i,j] = numA - denomA
+						end
+						
+						o_lex.each_index do |k|
+							numB = -Infinity
+							denomB = -Infinity
+							sequence.each_index do |t|
+								break if t >= sequence.length-1
+								denomB = log_add([denomB, gamma[t, i]])
+								next unless k == index(sequence[t], o_lex)
+								numB = log_add([numB, gamma[t, i]])
+							end
+							localB[i, k] = numB - denomB
+						end
+						
+					end
+					
+					puts "LogProb: #{logprob}"
+					
+					@a = localA.collect{|x| Math::E**x}
+					@b = localB.collect{|x| Math::E**x}
+					#@pi = gamma[0, true] / gamma[0, true].sum
+					
+				end
+			end
+		end
+		
+		
+		def train_unsupervised(sequences, max_iterations = 10)
 			# initialize model parameters if we don't already have an estimate
 			@pi ||= NArray.float(@q_lex.length).fill(1)/@q_lex.length			
 			@a ||= NArray.float(@q_lex.length, @q_lex.length).fill(1)/@q_lex.length
@@ -65,7 +143,7 @@ class HMM
 			converged = false
 			last_logprob = 0
 			iteration = 0
-			max_iterations = 10 #1000 #kwargs.get('max_iterations', 1000)
+			#max_iterations = 10 #1000 #kwargs.get('max_iterations', 1000)
 			epsilon = 1e-6 # kwargs.get('convergence_logprob', 1e-6)
 			
 			max_iterations.times do |iteration|
@@ -75,6 +153,7 @@ class HMM
 				_B_numer = NArray.float(q_lex.length, o_lex.length).fill(-Infinity)
 				_A_denom = NArray.float(q_lex.length).fill(-Infinity)
 				_B_denom = NArray.float(q_lex.length).fill(-Infinity)
+				_Pi = NArray.float(q_lex.length)
 				
 				logprob = 0.0
 				
@@ -94,6 +173,7 @@ class HMM
 					local_B_numer = NArray.float(q_lex.length, o_lex.length).fill(-Infinity)
 					local_A_denom = NArray.float(q_lex.length).fill(-Infinity)
 					local_B_denom = NArray.float(q_lex.length).fill(-Infinity)
+					local_Pi = NArray.float(q_lex.length)
 					
 					sequence.each_with_index do |o, t|
 						o_next = index(sequence[t+1], o_lex) if t < sequence.length-1
@@ -133,6 +213,7 @@ class HMM
 							_A_denom[i] = log_add([_A_denom[i], local_A_denom[i] - lpk])
 							_B_denom[i] = log_add([_B_denom[i], local_B_denom[i] - lpk])
 						end
+						
 					end
 				
 					puts alpha.collect{|x| Math::E**x}.inspect if debug
@@ -143,10 +224,10 @@ class HMM
 				q_lex.each_index do |i|
 					q_lex.each_index do |j|
 						#puts 2**(_A_numer[i,j] - _A_denom[i]), _A_numer[i,j], _A_denom[i]
-						@a[i, j] = 2**(_A_numer[i,j] - _A_denom[i])
+						@a[i, j] = Math::E**(_A_numer[i,j] - _A_denom[i])
 					end
 					o_lex.each_index do |k|
-						@b[i, k] = 2**(_B_numer[i,k] - _B_denom[i])
+						@b[i, k] = Math::E**(_B_numer[i,k] - _B_denom[i])
 					end
 					# This comment appears in NLTK:
 					# Rabiner says the priors don't need to be updated. I don't
@@ -160,29 +241,67 @@ class HMM
 					break
 				end
 				
+				puts "LogProb: #{logprob}" #if debug
+				
 				last_logprob = logprob
 			end
 		end
 		
+		def xi(sequence)
+			xi = NArray.float(sequence.length-1, q_lex.length, q_lex.length)
+			
+			alpha = forward_probability(sequence)
+			beta = backward_probability(sequence)
+			
+			0.upto sequence.length-2 do |t|
+				denom = 0
+				q_lex.each_index do |i|
+					q_lex.each_index do |j|
+						x = alpha[t, i] + log(@a[i,j]) + \
+							log(@b[j,index(sequence[t+1], o_lex)]) + \
+							beta[t+1, j]
+						denom = log_add([denom, x])
+					end
+				end
+				
+				q_lex.each_index do |i|
+					q_lex.each_index do |j|
+						numer = alpha[t, i] + log(@a[i,j]) + \
+							log(@b[j,index(sequence[t+1], o_lex)]) + \
+							beta[t+1, j]
+						xi[t, i, j] = numer - denom
+					end
+				end
+			end
+			
+			puts "Xi: #{xi.inspect}" if debug
+			xi
+		end
+		
+		def gamma(xi)
+			gamma = NArray.float(xi.shape[0], xi.shape[1]).fill(-Infinity)
+			
+			0.upto gamma.shape[0] - 1 do |t|
+				q_lex.each_index do |i|
+					q_lex.each_index do |j|
+						gamma[t, i] = log_add([gamma[t, i], xi[t, i, j]])
+					end
+				end
+			end
+			
+			puts "Gamma: #{gamma.inspect}" if debug
+			gamma
+		end
+		
 		def forward_probability(sequence)
 			alpha = NArray.float(sequence.length, q_lex.length).fill(-Infinity)
-			# log version not coming out the same as unlogged!!!! check!
-			_t=sequence.length
-			n = q_lex.length
 			
-#			n.times do |i|
-#				alpha[0, i] = @pi[i] + @b[i, index(sequence.first, o_lex)]
-#			end
 			alpha[0, true] = log(@pi) + log(@b[true, index(sequence.first, o_lex)])
 			
 			sequence.each_with_index do |o, t|
 				next if t==0
 				q_lex.each_index do |i|
 					q_lex.each_index do |j|
-						# NLTK:
-						#alpha[t, i] = _log_add(alpha[t, i], alpha[t-1, j] +
-						#	self._transitions[sj].logprob(si))
-#						puts alpha[t-1, i]+log(@a[i, j]), alpha[t-1, i],log(@a[i, j])
 						alpha[t, i] = log_add([alpha[t, i], alpha[t-1, j]+log(@a[j, i])])
 					end
 					alpha[t, i] += log(b[i, index(o, o_lex)])
