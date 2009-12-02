@@ -213,7 +213,7 @@ class HMM
 				q_lex.each_index do |i|
 					q_lex.each_index do |j|
 						beta[t, i] = log_add([beta[t,i], log(@a[i, j]) \
-							+ log(@b[j, index(sequence[t], o_lex)]) \
+							+ log(@b[j, index(sequence[t+1], o_lex)]) \
 							+ beta[t+1, j]])
 					end
 				end

@@ -37,6 +37,15 @@ class TestHmm < Test::Unit::TestCase
 		assert close_enough(expected_alpha, \
 			@simple_model.forward_probability(["A","B","A"]).collect{|x| Math::E**x})
 	end
+		
+	should "compute backward probabilities" do
+		expected_beta = NArray[ [ 0.2271, 0.32, 1.0 ], 
+						[ 0.1577, 0.66, 1.0 ], 
+						[ 0.2502, 0.25, 1.0 ] ]
+
+		assert close_enough(expected_beta, \
+			@simple_model.backward_probability(["A","B","A"]).collect{|x| Math::E**x}
+	end
 	
 	
 	def close_enough(a, b)
