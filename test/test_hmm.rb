@@ -46,6 +46,14 @@ class TestHmm < Test::Unit::TestCase
 		assert close_enough(expected_beta, \
 			@simple_model.backward_probability(["A","B","A"]).collect{|x| Math::E**x})
 	end
+	
+	should "compute sequence likelihoods" do
+		assert @simple_model.likelihood(["A", "A"]) \
+			+@simple_model.likelihood(["A", "B"]) \
+			+@simple_model.likelihood(["B", "B"]) \
+			+@simple_model.likelihood(["B", "A"]) \
+			== 1
+	end
 		
 	should "compute xi" do
 		@simple_model.gamma(@simple_model.xi(["A","B","A"]))

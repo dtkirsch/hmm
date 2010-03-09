@@ -309,6 +309,15 @@ class HMM
 			alpha
 		end
 		
+		def log_likelihood(sequence)
+			alpha = forward_probability(sequence)
+			log_add(alpha[-1, true])
+		end
+		
+		def likelihood(sequence)
+			exp(log_likelihood(sequence))
+		end
+		
 		def log_add(values)
 			x = values.max
 			if x > -Infinity
@@ -407,9 +416,13 @@ class HMM
 			end
 		end
 		
-		def exp(array)
-			# e to the power of each element
-			array.collect{|n| Math::E ** n}
+		def exp(subject)
+			if subject.is_a?(Array) or subject.is_a?(NArray)
+				# e to the power of each element
+				subject.collect{|n| Math::E ** n}
+			else
+				return Math::E ** subject
+			end
 		end
 		
 		def argmax(narray)
